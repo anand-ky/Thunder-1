@@ -33,6 +33,10 @@
 #error "Please define the name of the COM process!!!"
 #endif
 
+#ifdef RFC_FOUND
+#include "rfcapi.h"
+#endif
+
 #define MAX_EXTERNAL_WAITS 2000 /* Wait for 2 Seconds */
 
 namespace WPEFramework {
@@ -1728,7 +1732,12 @@ namespace PluginHost {
                 , _server(server)
                 , _subSystems(this)
                 , _authenticationHandler(nullptr)
+                , _enableThunderSecurity(true) // Thunder Security is enabled by Default.
             {
+#ifdef RFC_FOUND
+                // If RFC for Thunder Security is set to false, disable security.
+                getRFC("Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.ThunderSecurity.Enable",_enableThunderSecurity);
+#endif
             }
 #ifdef __WINDOWS__
 #pragma warning(default : 4355)
@@ -1740,12 +1749,51 @@ namespace PluginHost {
             }
 
         public:
+
+#ifdef RFC_FOUND
+            inline bool getRFC(const string& name, bool& response)
+            {
+                bool retVal = false;
+    
+                RFC_ParamData_t param = {};
+                
+                WDMP_STATUS status = getRFCParameter(const_cast<char*>("WPEFramework"), name.c_str(), &param);
+                SYSLOG(Logging::Startup, (_T("name = %s, type = %d, value = %s"), param.name, param.type, param.value));
+
+                if (status == WDMP_SUCCESS)
+                {        
+                    switch (param.type)
+                    {
+                        case WDMP_BOOLEAN:
+                            response = (strncmp(param.value, "true", strlen("true")) == 0);
+                            break;
+
+                        default:
+                            break;
+                    }
+                    retVal = true;
+                }
+                else
+                {
+                    SYSLOG(Logging::Startup, (_T("getRFCParameter fail : %s"), getRFCErrorString(status)));
+                }
+    
+                
+                return retVal;
+            }
+#endif
+
+            inline bool isThunderSecurityEnabled()
+            {
+                return _enableThunderSecurity;
+            }           
+
             inline void Security(const bool enabled)
             {
                 _adminLock.Lock();
 
                 if ((_authenticationHandler == nullptr) ^ (enabled == false)) {
-                    if (_authenticationHandler == nullptr) {
+                    if ((_authenticationHandler == nullptr) && _enableThunderSecurity) {
                         // Let get the AuthentcationHandler.
                         _authenticationHandler = reinterpret_cast<IAuthenticate*>(QueryInterfaceByCallsign(IAuthenticate::ID, _subSystems.SecurityCallsign()));
                     } else {
@@ -2104,6 +2152,7 @@ namespace PluginHost {
             Server& _server;
             Core::Sink<SubSystems> _subSystems;
             IAuthenticate* _authenticationHandler;
+            bool _enableThunderSecurity;
         };
 
         // Connection handler is the listening socket and keeps track of all open
@@ -2571,9 +2620,20 @@ namespace PluginHost {
                     break;
                 }
                 case Request::UNAUTHORIZED: {
-                    // Report that we, at least, need a call sign.
-                    Submit(_unauthorizedRequest);
-                    break;
+                    // Report that request is unauthorized.
+                        Core::ProxyType<Web::Response> response = IFactories::Instance().Response();
+                        Core::ProxyType<Core::JSONRPC::Message> body(Core::proxy_cast<Core::JSONRPC::Message>(IFactories::Instance().JSONRPC()));
+                        
+                        Core::ProxyType<Core::JSONRPC::Message> message(request->Body<Core::JSONRPC::Message>());
+                        if(message.IsValid())
+                            body->Id = message->Id;
+                        
+                        body->JSONRPC = Core::JSONRPC::Message::DefaultVersion;
+                        body->Error.SetError(Core::ERROR_PRIVILIGED_REQUEST);
+                        body->Error.Text = _T("Request needs authorization. Missing or invalid token.");
+                        response->Body(body);
+                        Submit(response);
+
                 }
                 case Request::COMPLETE: {
                     Core::ProxyType<Service> service(Core::proxy_cast<Service>(request->Service()));
@@ -2648,10 +2708,9 @@ namespace PluginHost {
                         PluginHost::Channel::Unlock();
 
                         if (securityClearance == false) {
-                            // Oopsie daisy we are not allowed to handle this request.
-                            // TODO: How shall we report back on this?
+                            SYSLOG(Logging::Startup, (_T("Security failed, incoming request is not authorized.")));
                             message->Error.SetError(Core::ERROR_PRIVILIGED_REQUEST);
-                            message->Error.Text = _T("method invokation not allowed.");
+                            message->Error.Text = _T("Request needs authorization. Missing or invalid token.");
                             Submit(Core::ProxyType<Core::JSON::IElement>(message));
                         }
                     }

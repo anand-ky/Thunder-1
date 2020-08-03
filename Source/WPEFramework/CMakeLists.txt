@@ -15,6 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+find_package(RFC)
+
 get_filename_component(TARGET ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 
 set(THREADPOOL_COUNT 4 CACHE STRING "The number of threads in the thread pool")
@@ -44,6 +46,8 @@ if (TREE_REFERENCE)
             )
 endif()
 
+target_include_directories(${TARGET} PRIVATE ${RFC_INCLUDE_DIRS})
+
 target_link_libraries(${TARGET}
         PRIVATE
           CompileSettingsDebug::CompileSettingsDebug
@@ -54,6 +58,7 @@ target_link_libraries(${TARGET}
           ${NAMESPACE}Cryptalgo::${NAMESPACE}Cryptalgo
           ${NAMESPACE}Plugins::${NAMESPACE}Plugins
           ${NAMESPACE}COMProcess::${NAMESPACE}COMProcess  # For COM executable define
+          ${RFC_LIBRARIES}
         )
 
 # target_include_directories(${TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")

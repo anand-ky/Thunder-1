@@ -774,6 +774,26 @@ ENUM_CONVERSION_BEGIN(Core::ProcessInfo::scheduler)
             securityProvider->Security(false);
         } else {
             SYSLOG(Logging::Startup, (_T("Security ENABLED, incoming requests need to be authorized!!!")));
+            
+            // If RFC for Thunder Security is set to false, disable security.
+            if(_services.isThunderSecurityEnabled())
+            {
+                SYSLOG(Logging::Startup, (_T("Security ENABLED, incoming requests need to be authorized!!!")));
+                //activate Security Agent Plugin
+                Core::ProxyType<Service> service;
+                uint32_t result = _services.FromIdentifier("SecurityAgent", service);
+                if(result == Core::ERROR_NONE)
+                {
+                    service->Activate(PluginHost::IShell::STARTUP);
+                }
+
+            }
+            else
+            {
+                SYSLOG(Logging::Startup, (_T("Security DISABLED. Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.ThunderSecurity.Enable set to false")));
+                securityProvider->Security(false);
+            }
+            SYSLOG(Logging::Startup, (_T("Security ENABLED, incoming requests need to be authorized!!!")));
         }
 
         securityProvider->Release();
